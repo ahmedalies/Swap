@@ -149,21 +149,36 @@ module.exports = {
         let item = ItemModel(data);
         item.status = "available";
         let result = {};
-        item.save(function (err, res) {
-            if (err){
-                result.error = true;
-                result.message = "error creating item";
-                callback(true, result);
+        userModel.getUser(data.user, function (error, userResult) {
+            if (userResult){
+                if (userResult.user.status == 'ongoing'){
+                    item.save(function (err, res) {
+                        if (err){
+                            result.error = true;
+                            result.message = "error creating item";
+                            callback(true, result);
+                        } else {
+                            result.error = false;
+                            result.message = "item created successfully";
+                            result.item = item;
+                            register1WeekInterval(item._id);
+                            callback(false, result);
+                        }
+                    });
+                } else {
+                    result.error = true;
+                    result.message = "this user blocked for rate";
+                    callback(true, result);
+                }
             } else {
-                result.error = false;
-                result.message = "item created successfully";
-                result.item = item;
-                register1WeekInterval(item._id);
-                callback(false, result);
+                result.error = true;
+                result.message = "can't find this user";
+                callback(true, result);
             }
         });
     },
 
+    /* add user policy -blocked for rate -*/
     modifyItem: function (data, callback) {
         let item = ItemModel(data);
         let result = {};
@@ -362,184 +377,216 @@ module.exports = {
 
     getMyOngoingSwaps: function (data, callback) {
         let result = {};
-        SwapRequestModel.find({owner: data.userId, status: "ongoing"})
-            .populate('neededItem - providedItem')
-            .populate('needy - owner')
-            .exec(function (err, obj) {
-                if (err){
-                    result.error = true;
-                    result.message = "internal error";
-                    callback(true, result);
-                } else if (obj.length) {
-                    result.error = false;
-                    result.requsts = obj;
-                    callback(false, result);
-                } else {
-                    result.error = true;
-                    result.message = "no requests have been found";
-                    callback(true, result);
-                }
-            });
+        userModel.getUser(data.userId, function (err, userResult) {
+            if (userResult.user.status == 'ongoing'){
+                SwapRequestModel.find({owner: data.userId, status: "ongoing"})
+                    .populate('neededItem - providedItem')
+                    .populate('needy - owner')
+                    .exec(function (err, obj) {
+                        if (err){
+                            result.error = true;
+                            result.message = "internal error";
+                            callback(true, result);
+                        } else if (obj.length) {
+                            result.error = false;
+                            result.requsts = obj;
+                            callback(false, result);
+                        } else {
+                            result.error = true;
+                            result.message = "no requests have been found";
+                            callback(true, result);
+                        }
+                    });
+            } else {
+                result.error = true;
+                result.message = "this user blocked for rate";
+                callback(true, result);
+            }
+        });
     },
     
     getMyCompletedSwap: function (data, callback) {
         let result = {};
-        SwapRequestModel.find({owner: data.userId, status: "accepted"})
-            .populate('neededItem - providedItem')
-            .populate('needy - owner')
-            .exec(function (err, obj) {
-                if (err){
-                    result.error = true;
-                    result.message = "internal error";
-                    callback(true, result);
-                } else if (obj.length) {
-                    result.error = false;
-                    result.requsts = obj;
-                    callback(false, result);
-                } else {
-                    result.error = true;
-                    result.message = "no requests have been found";
-                    callback(true, result);
-                }
-            });
+        userModel.getUser(data.userId, function (err, userResult) {
+            if (userResult.user.status == 'ongoing'){
+                SwapRequestModel.find({owner: data.userId, status: "accepted"})
+                    .populate('neededItem - providedItem')
+                    .populate('needy - owner')
+                    .exec(function (err, obj) {
+                        if (err){
+                            result.error = true;
+                            result.message = "internal error";
+                            callback(true, result);
+                        } else if (obj.length) {
+                            result.error = false;
+                            result.requsts = obj;
+                            callback(false, result);
+                        } else {
+                            result.error = true;
+                            result.message = "no requests have been found";
+                            callback(true, result);
+                        }
+                    });
+            } else {
+                result.error = true;
+                result.message = "this user blocked for rate";
+                callback(true, result);
+            }
+        });
     },
 
     getMyRejectedSwap: function (data, callback) {
         let result = {};
-        SwapRequestModel.find({owner: data.userId, status: "rejected"})
-            .populate('neededItem - providedItem')
-            .populate('needy - owner')
-            .exec(function (err, obj) {
-                if (err){
-                    result.error = true;
-                    result.message = "internal error";
-                    callback(true, result);
-                } else if (obj.length) {
-                    result.error = false;
-                    result.requsts = obj;
-                    callback(false, result);
-                } else {
-                    result.error = true;
-                    result.message = "no requests have been found";
-                    callback(true, result);
-                }
-            });
+        userModel.getUser(data.userId, function (err, userResult) {
+            if (userResult.user.status == 'ongoing'){
+                SwapRequestModel.find({owner: data.userId, status: "rejected"})
+                    .populate('neededItem - providedItem')
+                    .populate('needy - owner')
+                    .exec(function (err, obj) {
+                        if (err){
+                            result.error = true;
+                            result.message = "internal error";
+                            callback(true, result);
+                        } else if (obj.length) {
+                            result.error = false;
+                            result.requsts = obj;
+                            callback(false, result);
+                        } else {
+                            result.error = true;
+                            result.message = "no requests have been found";
+                            callback(true, result);
+                        }
+                    });
+            } else {
+                result.error = true;
+                result.message = "this user blocked for rate";
+                callback(true, result);
+            }
+        });
     },
     
     respondToSwapRequest: function (data, callback) {
         let result = {};
-        SwapRequestModel.find({_id: data.requestId, owner: data.owner}, function (err, obj) {
-            if(obj.length){
-                /*accept request*/
-                if (obj[0].status === 'ongoing'){
-                    if (data.status === "accepted"){
-                        RunningSwapsModel.find({userId: data.owner}, function (err, j) {
-                            let runningSwapsForOwnerModel = null;
-                            if (j.length){
-                                j[0].running.push({swapId: data.requestId});
-                                runningSwapsForOwnerModel = j[0];
-                            } else {
-                                let runningForOwner = {
-                                    userId: data.owner,
-                                    running: [{swapId: data.requestId}]
-                                };
-                                runningSwapsForOwnerModel = new RunningSwapsModel(runningForOwner);
-                            }
-                            runningSwapsForOwnerModel.save(function (err) {
-                                if (err){
-                                    result.error = true;
-                                    result.message = "error occurred-1";
-                                    callback(true, result);
-                                } else {
-                                    RunningSwapsModel.find({userId: obj[0].needy}, function (err, r) {
-                                        let runningSwapsForNeedyModel = null;
-                                        if (r.length){
-                                            r[0].running.push({swapId: data.requestId});
-                                            runningSwapsForNeedyModel = r[0];
+        userModel.getUser(data.owner, function (err, userResult) {
+            if (userResult.user.status == 'ongoing'){
+                SwapRequestModel.find({_id: data.requestId, owner: data.owner}, function (err, obj) {
+                    if(obj.length){
+                        /*accept request*/
+                        if (obj[0].status === 'ongoing'){
+                            if (data.status === "accepted"){
+                                RunningSwapsModel.find({userId: data.owner}, function (err, j) {
+                                    let runningSwapsForOwnerModel = null;
+                                    if (j.length){
+                                        j[0].running.push({swapId: data.requestId});
+                                        runningSwapsForOwnerModel = j[0];
+                                    } else {
+                                        let runningForOwner = {
+                                            userId: data.owner,
+                                            running: [{swapId: data.requestId}]
+                                        };
+                                        runningSwapsForOwnerModel = new RunningSwapsModel(runningForOwner);
+                                    }
+                                    runningSwapsForOwnerModel.save(function (err) {
+                                        if (err){
+                                            result.error = true;
+                                            result.message = "error occurred-1";
+                                            callback(true, result);
                                         } else {
-                                            let runningForNeedy = {
-                                                userId: obj[0].needy,
-                                                running: [{swapId: data.requestId}]
-                                            };
-                                            runningSwapsForNeedyModel = new RunningSwapsModel(runningForNeedy);
-                                        }
-                                        runningSwapsForNeedyModel.save(function (err) {
-                                            if (err){
-                                                result.error = true;
-                                                result.message = "error occurred-2";
-                                                callback(true, result);
-                                            } else {
-                                                obj[0].status = data.status;
-                                                obj[0].respond_at = Date.now();
-                                                obj[0].after24h = Date.now().valueOf() + (24 * 60 * 60 * 1000);
-
-                                                obj[0].save(function (err) {
+                                            RunningSwapsModel.find({userId: obj[0].needy}, function (err, r) {
+                                                let runningSwapsForNeedyModel = null;
+                                                if (r.length){
+                                                    r[0].running.push({swapId: data.requestId});
+                                                    runningSwapsForNeedyModel = r[0];
+                                                } else {
+                                                    let runningForNeedy = {
+                                                        userId: obj[0].needy,
+                                                        running: [{swapId: data.requestId}]
+                                                    };
+                                                    runningSwapsForNeedyModel = new RunningSwapsModel(runningForNeedy);
+                                                }
+                                                runningSwapsForNeedyModel.save(function (err) {
                                                     if (err){
                                                         result.error = true;
-                                                        result.message = "error adding response";
+                                                        result.message = "error occurred-2";
                                                         callback(true, result);
                                                     } else {
-                                                        let intervalName = data.requestId;
-                                                        register1DayInterval(intervalName);
+                                                        obj[0].status = data.status;
+                                                        obj[0].respond_at = Date.now();
+                                                        obj[0].after24h = Date.now().valueOf() + (24 * 60 * 60 * 1000);
+
+                                                        obj[0].save(function (err) {
+                                                            if (err){
+                                                                result.error = true;
+                                                                result.message = "error adding response";
+                                                                callback(true, result);
+                                                            } else {
+                                                                let intervalName = data.requestId;
+                                                                register1DayInterval(intervalName);
 
 
-                                                        /*
-                                                         * -reject all other requests for that item (neededItem)
-                                                         * */
-                                                        SwapRequestModel.find({neededItem: obj[0].neededItem}, function (err, res) {
-                                                            if (res.length){
-                                                                res.forEach(function (i) {
-                                                                    if (i._id != data.requestId){
-                                                                        i.status = 'rejected';
-                                                                        i.save(function (error) {
+                                                                /*
+                                                                 * -reject all other requests for that item (neededItem)
+                                                                 * */
+                                                                SwapRequestModel.find({neededItem: obj[0].neededItem}, function (err, res) {
+                                                                    if (res.length){
+                                                                        res.forEach(function (i) {
+                                                                            if (i._id != data.requestId){
+                                                                                i.status = 'rejected';
+                                                                                i.save(function (error) {
 
+                                                                                });
+                                                                            }
                                                                         });
                                                                     }
-                                                                });
-                                                            }
 
-                                                            /*
-                                                            * -cancel all other requests for that item(providedItem)
-                                                            * */
-                                                            SwapRequestModel.find({providedItem: obj[0].providedItem}, function (err, r) {
-                                                                if (r.length){
-                                                                    r.forEach(function (i) {
-                                                                        if (i._id != data.requestId){
-                                                                            i.status = 'canceled';
-                                                                            i.save(function (error) {
+                                                                    /*
+                                                                     * -cancel all other requests for that item(providedItem)
+                                                                     * */
+                                                                    SwapRequestModel.find({providedItem: obj[0].providedItem}, function (err, r) {
+                                                                        if (r.length){
+                                                                            r.forEach(function (i) {
+                                                                                if (i._id != data.requestId){
+                                                                                    i.status = 'canceled';
+                                                                                    i.save(function (error) {
 
+                                                                                    });
+                                                                                }
                                                                             });
                                                                         }
                                                                     });
-                                                                }
-                                                            });
 
-                                                            result.error = false;
-                                                            result.message = "response added successfully";
-                                                            callback(false, result);
+                                                                    result.error = false;
+                                                                    result.message = "response added successfully";
+                                                                    callback(false, result);
+                                                                });
+                                                            }
                                                         });
                                                     }
                                                 });
-                                            }
-                                        });
+                                            });
+                                        }
                                     });
-                                }
-                            });
-                        });
+                                });
+                            } else {
+                                /*reject request*/
+                                result.error = false;
+                                result.message = "response added successfully";
+                                callback(false, result);
+                            }
+                        } else {
+                            result.error = true;
+                            result.message = "can not respond to this item";
+                            callback(false, result);
+                        }
                     } else {
-                        /*reject request*/
-                        result.error = false;
-                        result.message = "response added successfully";
-                        callback(false, result);
+                        result.error = true;
+                        result.message = "request not found";
+                        callback(true, result);
                     }
-                } else {
-                    result.error = true;
-                    result.message = "can not respond to this item";
-                    callback(false, result);
-                }
+                });
             } else {
                 result.error = true;
-                result.message = "request not found";
+                result.message = "this user blocked for rate";
                 callback(true, result);
             }
         });
@@ -551,14 +598,31 @@ module.exports = {
             if (obj.length){
                 if (data.userId == obj[0].needy){
                     obj[0].needyRate = data.rate;
+                    ItemModel.find({_id: obj[0].providedItem}, function (err, res) {
+                        if (res.length){
+                            res[0].status = 'swapped';
+                            res[0].save(function (e) {
+
+                            });
+                        }
+                    });
                 } else if (data.userId == obj[0].owner){
                     obj[0].ownerRate = data.rate;
+                    ItemModel.find({_id: obj[0].neededItem}, function (err, res) {
+                        if (res.length){
+                            res[0].status = 'swapped';
+                            res[0].save(function (e) {
+
+                            });
+                        }
+                    });
                 } else {
                     result.error = true;
                     result.message = "insufficient userId";
                     callback(true, result);
                     return;
                 }
+
                 obj[0].save(function (err) {
                     if (err){
                         result.error = true;
@@ -690,3 +754,13 @@ function register1WeekInterval(itemId) {
         }
     });
 }
+
+/*userModel.getUser(data.userId, function (err, userResult) {
+    if (userResult.user.status != 'ongoing'){
+
+    } else {
+        result.error = true;
+        result.message = "this user blocked for rate";
+        callback(true, result);
+    }
+});*/

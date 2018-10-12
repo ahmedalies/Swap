@@ -57,6 +57,13 @@ router.post('/items/add', upload.array('images', 12), function (req, res, next) 
 
     item.addItem(req.body, function (err, result) {
         if (err){
+            // if (req.body.image_urls.length){
+            //     req.body.image_urls.forEach(function (i) {
+            //         fs.unlink('../' + i.url, function (error) {
+            //             console.log(error);
+            //         });
+            //     });
+            // }
             res.status(400).send(result);
         } else {
             res.status(200).send(result);
