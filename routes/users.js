@@ -138,4 +138,59 @@ router.post('/items/rate-swap', function (req, res, next) {
     });
 });
 
+/*POST subscribe to interest*/
+router.post('/interest-subscribe', function (req, res, next) {
+    user.subscribeInterests(req.body, function (err, result) {
+        if (err){
+            res.status(400).send(result);
+        } else {
+            res.status(200).send(result);
+        }
+    });
+});
+
+/*GET all user interests*/
+router.get('/my-interests', function (req, res, next) {
+    user.getAllInterests(function (err, result) {
+        if (err){
+            res.status(400).send(result);
+        } else {
+            res.status(200).send(result);
+        }
+    });
+});
+
+/*GET all user items*/
+router.get('/home/:userId', function (req, res, next) {
+    item.getUserItems(req.params, function (err, result) {
+        if (err){
+            res.status(400).send(result);
+        } else {
+            res.status(200).send(result);
+        }
+    });
+});
+
+/*GET items by user categories*/
+router.get('/my-items/:userId', function (req, res, next) {
+    item.getItemsByCategory(req.params, function (err, result) {
+        if (err){
+            res.status(400).send(result);
+        } else {
+            res.status(200).send(result);
+        }
+    });
+});
+
+/*POST items by user categories*/
+router.post('/item', function (req, res, next) {
+    item.getItemDetails(req.body, function (err, result) {
+        if (err){
+            res.status(400).send(result);
+        } else {
+            res.status(200).send(result);
+        }
+    });
+});
+
 module.exports = router;

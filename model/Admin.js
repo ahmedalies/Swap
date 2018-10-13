@@ -90,5 +90,34 @@ module.exports = {
                 });
             }
         });
-    }
+    },
+
+    getAllInterests: function (callback) {
+        let result = {};
+        InterestsModel.find({}, function (err, res) {
+            if (err){
+                result.error = true;
+                result.message = 'error occurred';
+                callback(true, result);
+            } else if (res.length){
+                let interests = [];
+                res.forEach(function (i) {
+                    let item = {};
+                    item._id = i._id;
+                    item.name = i.name;
+                    item.image = 'http://192.168.56.1:3000' +
+                        i.image_url.slice(1, i.image_url.length);
+                    interests.push(item);
+                });
+
+                result.interests = interests;
+                result.error = false;
+                callback(false, result);
+            } else {
+                result.error = true;
+                result.message = 'no interests available';
+                callback(true, result);
+            }
+        });
+    },
 };

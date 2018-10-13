@@ -178,7 +178,7 @@ module.exports = {
         });
     },
 
-    /* add user policy -blocked for rate -*/
+    /* todo add user policy -blocked for rate -*/
     modifyItem: function (data, callback) {
         let item = ItemModel(data);
         let result = {};
@@ -209,6 +209,7 @@ module.exports = {
         });
     },
 
+    /* todo add user policy -blocked for rate -*/
     deleteIyem: function (data, callback) {
         let item = ItemModel(data);
         let result = {};
@@ -238,6 +239,7 @@ module.exports = {
         });
     },
 
+    /* todo add user policy -blocked for rate -*/
     reportItem: function (data, callback) {
         let itemReport = ItemReportModel(data);
         let result = {};
@@ -250,6 +252,189 @@ module.exports = {
                 result.error = false;
                 result.message = "item report inserted successfully";
                 callback(false, result);
+            }
+        });
+    },
+
+    getUserItems: function (data, callback) {
+        let result = {};
+        let items = [];
+        userModel.getUser(data.userId, function (err, r) {
+            if (r.length){
+                if (r.status == 'ongoing') {
+                    ItemModel.find({user: data.userId}, function (err, res) {
+                        if (err){
+                            result.error = true;
+                            result.message = 'error occurred';
+                            callback(true, result);
+                        } else if (res.length){
+                            res.forEach(function (i) {
+                                if (i.status == 'available'){
+                                    let ii = {};
+                                    ii._id = i._id;
+                                    ii.status = i.status;
+                                    ii.created_at = i.created_at;
+                                    ii.name = i.name;
+                                    ii.description = i.description;
+                                    ii.category = i.category;
+                                    if (i.image_urls.length){
+                                        let images = [];
+                                        i.image_urls.forEach(function (im) {
+                                            let image = {};
+                                            image._id = im._id;
+                                            image.url = im.url;
+                                            images.push(image)
+                                        });
+                                        ii.images = images;
+                                    }
+                                    items.push(ii);
+                                }
+                            });
+                        } else {
+                            result.error = true;
+                            result.message = 'no items found';
+                            callback(true, result);
+                        }
+
+                        if (items.length){
+                            result.error = false;
+                            result.items = items;
+                            callback(false, result);
+                        } else {
+                            result.error = true;
+                            result.message = 'no available items found';
+                            callback(true, result);
+                        }
+                    });
+                } else {
+                    result.error = true;
+                    result.message = 'this user blocked for rate';
+                    callback(true, result);
+                }
+            } else {
+                result.error = true;
+                result.message = 'user not found';
+                callback(true, result);
+            }
+        });
+    },
+
+    getItemsByCategory: function (data, callback) {
+        let result = {};
+        let items = [];
+        userModel.getUser(data.userId, function (err, res) {
+            if (res.length){
+                if (res.status == 'ongoing'){
+                    userModel.getUserInterests(data, function (err, r) {
+                        if (err){
+                            callback(true, r);
+                        } else if (r.length) {
+                            ItemModel.find({category: data.interestId}, function (err, res) {
+                                if (err){
+                                    result.error = true;
+                                    result.message = 'error occurred';
+                                    callback(true, result);
+                                } else if (res.length){
+                                    res.forEach(function (i) {
+                                        if (i.status == 'available'){
+                                            let ii = {};
+                                            ii._id = i._id;
+                                            ii.status = i.status;
+                                            ii.created_at = i.created_at;
+                                            ii.name = i.name;
+                                            ii.description = i.description;
+                                            ii.category = i.category;
+                                            if (i.image_urls.length){
+                                                let images = [];
+                                                i.image_urls.forEach(function (im) {
+                                                    let image = {};
+                                                    image._id = im._id;
+                                                    image.url = im.url;
+                                                    images.push(image)
+                                                });
+                                                ii.images = images;
+                                            }
+                                            items.push(ii);
+                                        }
+                                    });
+                                } else {
+                                    result.error = true;
+                                    result.message = 'no items found';
+                                    callback(true, result);
+                                }
+
+                                if (items.length){
+                                    result.error = false;
+                                    result.items = items;
+                                    callback(false, result);
+                                } else {
+                                    result.error = true;
+                                    result.message = 'no available items found';
+                                    callback(true, result);
+                                }
+                            });
+                        } else {
+                            callback(true, r);
+                        }
+                    });
+                } else {
+                    result.error = true;
+                    result.message = 'this user blocked for rate';
+                    callback(true, result);
+                }
+            } else {
+                result.error = true;
+                result.message = 'user not found';
+                callback(true, result);
+            }
+        });
+    },
+
+    getItemDetails: function (data, callback) {
+        let result = {};
+        userModel.getUser(data.userId, function (err, res) {
+            if (res.length){
+                if (res.status == 'ongoing'){
+                    ItemModel.find({_id: data.itemId}, function (err, r) {
+                        if (err){
+                            result.error = true;
+                            result.messgae = 'error occurred';
+                            callback(true, result);
+                        } else if (r.length){
+                            if (r[0].status == 'available'){
+                                let item = {};
+                                item._id = r[0].id;
+                                item.status = r[0].status;
+                                item.created_at = r[0].created_at;
+                                item.name = r[0].name;
+                                item.category = r[0].category;
+                                item.description = r[0].description;
+                                item.owner = r[0].owner;
+                                item.images = r[0].image_urls;
+
+                                result.error = false;
+                                result.item = item;
+                                callback(false, result);
+                            } else {
+                                result.error = true;
+                                result.messgae = 'this item not available';
+                                callback(true, result);
+                            }
+                        } else {
+                            result.error = true;
+                            result.messgae = 'item not found';
+                            callback(true, result);
+                        }
+                    });
+                } else {
+                    result.error = true;
+                    result.messgae = 'this user blocked for rate';
+                    callback(true, result);
+                }
+            } else {
+                result.error = true;
+                result.messgae = 'user not found';
+                callback(true, result);
             }
         });
     },
@@ -649,6 +834,7 @@ module.exports = {
                                         if (intervals[data.requestId] && obj[0].needyRate > 0 && obj[0].ownerRate > 0){
                                             intervals[data.requestId] = null;
                                             clearInterval(intervals[data.requestId.valueOf()]);
+                                            intervals.splice(intervals.indexOf(data.requestId.valueOf()), 1);
                                         }
                                         result.error = false;
                                         result.message = "rated successfully";
@@ -698,7 +884,7 @@ function register1DayInterval(requestId) {
                 } else {
                     obj[0].mill24h = 0;
                     clearInterval(intervals[requestId.valueOf()]);
-                    intervals[requestId.valueOf()] = null;
+                    intervals.splice(intervals.indexOf(requestId.valueOf()), 1);
                     if (obj[0].needyRate == 0){
                         userModel.blockUserForRate(obj[0].needy, function (err, result) {
 
@@ -740,6 +926,7 @@ function register1WeekInterval(itemId) {
                             if (i.status != "ongoing"){
                                 if (intervals[itemId.valueOf()]){
                                     clearInterval(intervals[itemId.valueOf()]);
+                                    intervals.splice(intervals.indexOf(itemId.valueOf()), 1);
                                 }
                             }
                         });

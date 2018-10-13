@@ -4,6 +4,7 @@
 
 let mongoose = require('mongoose'),
     sha1 = require('sha1'),
+    admin = require('./Admin.js'),
     Schema = mongoose.Schema;
 let validatorObj = require('validator');
 
@@ -30,7 +31,20 @@ let userSchema = new Schema({
     }
 });
 
+let userInterestsSchema = new Schema({
+    userId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    },
+    interestId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Interest'
+    }
+});
+
 let UserModel = mongoose.model('User', userSchema);
+let UserInterestModel = mongoose.model('UserInterest', userInterestsSchema);
+
 
 module.exports = {
     register: function (data, callback) {
@@ -84,6 +98,66 @@ module.exports = {
                 result.error = false;
                 result.user = obj;
                 callback(false, result);
+            }
+        });
+    },
+
+    getAllInterests: function (callback) {
+        admin.getAllInterests(function (err, res) {
+            callback(err, res);
+        });
+    },
+
+    subscribeInterests: function (data, callback) {
+        let result = {};
+        UserModel.findById(_id, function (err, obj) {
+            if (err){
+                result.error = true;
+                result.message = 'user not found';
+                callback(true, result);
+            } else {
+                if (obj.status == 'ongoing'){
+                    if (data.interests.length) {
+                        data.interests.forEach(function (i) {
+                            i.userId = data.userId;
+                            let userInterestModel = new UserInterestModel(i);
+                            userInterestModel.save(function (err) {
+
+                            });
+                        });
+
+                        result.error = false;
+                        result.message = 'added successfully';
+                        callback(false, result);
+                    } else {
+                        result.error = true;
+                        result.message = 'empty body';
+                        callback(true, result);
+                    }
+                } else {
+                    result.error = true;
+                    result.message = 'this user blocked for rate';
+                    callback(true, result);
+                }
+            }
+        });
+    },
+
+    getUserInterests: function (data, callback) {
+        let result = {};
+        UserInterestModel.find({userId: data.userId}, function (er, res) {
+            if (err){
+                result.error = true;
+                result.message = 'error occurred';
+                callback(true, result);
+            } else if (res.length) {
+                result.error = false;
+                result.interests = res;
+                callback(false, result);
+            } else {
+                result.error = true;
+                result.message = 'this user does not have interests';
+                callback(true, result);
             }
         });
     },
