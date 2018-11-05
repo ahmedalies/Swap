@@ -5,7 +5,9 @@ let mongoose = require('mongoose'),
     userModel = require('./User.js'),
     Scheduler = require('mongo-scheduler'),
     scheduler = new Scheduler('mongodb://127.0.0.1:27017/swap', {doNotFire: false, pollInterval: 1000}),
-    Schema = mongoose.Schema;
+    Schema = mongoose.Schema,
+    assert = require("assert"),
+    timeAgo = require('node-time-ago');
 
 let intervals = [];
 
@@ -39,6 +41,7 @@ let itemSchema = new Schema({
     * -rejected -> rejected by admin after in-review state
     * -in-swapping -> after accepting request within 24 hours
     * -swapped -> item has been swapped
+    * -processing -> item is in processing mode at that time
     * */
     status: {
         type: String,
@@ -241,39 +244,52 @@ module.exports = {
 
     /* todo add user policy -blocked for rate -*/
     reportItem: function (data, callback) {
-        let itemReport = ItemReportModel(data);
         let result = {};
-        itemReport.save(function (err, res) {
-            if (err){
-                result.error = true;
-                result.message = "error inserting report";
-                callback(true, result);
-            } else {
-                result.error = false;
-                result.message = "item report inserted successfully";
-                callback(false, result);
-            }
-        });
+        if (data.report) {
+            let itemReport = ItemReportModel(data);
+            userModel.getUser(data.user, function (err, userResult) {
+                if (userResult.user.status == 'ongoing'){
+                    itemReport.save(function (err, res) {
+                        if (err){
+                            result.error = true;
+                            result.message = "error inserting report";
+                            callback(true, result);
+                        } else {
+                            result.error = false;
+                            result.message = "item report inserted successfully";
+                            callback(false, result);
+                        }
+                    });
+                } else {
+                    result.error = true;
+                    result.message = "this user blocked for rate";
+                    callback(true, result);
+                }
+            });
+        } else {
+            result.error = true;
+            result.message = "can not report item with no reason";
+            callback(true, result);
+        }
     },
 
     getUserItems: function (data, callback) {
         let result = {};
         let items = [];
-        userModel.getUser(data.userId, function (err, r) {
-            if (r.length){
-                if (r.status == 'ongoing') {
-                    ItemModel.find({user: data.userId}, function (err, res) {
+        ItemModel.find({user: data.userId, status: 'available'}, function (err, res) {
                         if (err){
                             result.error = true;
                             result.message = 'error occurred';
                             callback(true, result);
                         } else if (res.length){
+                            let counter = 0;
                             res.forEach(function (i) {
+                                counter++;
                                 if (i.status == 'available'){
                                     let ii = {};
                                     ii._id = i._id;
                                     ii.status = i.status;
-                                    ii.created_at = i.created_at;
+                                    ii.created_at = timeAgo(i.created_at);
                                     ii.name = i.name;
                                     ii.description = i.description;
                                     ii.category = i.category;
@@ -288,6 +304,31 @@ module.exports = {
                                         ii.images = images;
                                     }
                                     items.push(ii);
+
+                                    if (counter == res.length){
+                                        if (items.length){
+                                            result.error = false;
+                                            result.items = items;
+                                            callback(false, result);
+                                        } else {
+                                            result.error = true;
+                                            result.message = 'no items found';
+                                            callback(true, result);
+                                        }
+                                    }
+                                }
+                                else {
+                                    if (counter == res.length) {
+                                        if (items.length) {
+                                            result.error = false;
+                                            result.items = items;
+                                            callback(false, result);
+                                        } else {
+                                            result.error = true;
+                                            result.message = 'no items found';
+                                            callback(true, result);
+                                        }
+                                    }
                                 }
                             });
                         } else {
@@ -295,145 +336,146 @@ module.exports = {
                             result.message = 'no items found';
                             callback(true, result);
                         }
-
-                        if (items.length){
-                            result.error = false;
-                            result.items = items;
-                            callback(false, result);
-                        } else {
-                            result.error = true;
-                            result.message = 'no available items found';
-                            callback(true, result);
-                        }
                     });
-                } else {
-                    result.error = true;
-                    result.message = 'this user blocked for rate';
-                    callback(true, result);
-                }
-            } else {
-                result.error = true;
-                result.message = 'user not found';
-                callback(true, result);
-            }
-        });
     },
 
     getItemsByCategory: function (data, callback) {
         let result = {};
         let items = [];
-        userModel.getUser(data.userId, function (err, res) {
-            if (res.length){
-                if (res.status == 'ongoing'){
-                    userModel.getUserInterests(data, function (err, r) {
-                        if (err){
-                            callback(true, r);
-                        } else if (r.length) {
-                            ItemModel.find({category: data.interestId}, function (err, res) {
-                                if (err){
-                                    result.error = true;
-                                    result.message = 'error occurred';
-                                    callback(true, result);
-                                } else if (res.length){
-                                    res.forEach(function (i) {
-                                        if (i.status == 'available'){
-                                            let ii = {};
-                                            ii._id = i._id;
-                                            ii.status = i.status;
-                                            ii.created_at = i.created_at;
-                                            ii.name = i.name;
-                                            ii.description = i.description;
-                                            ii.category = i.category;
-                                            if (i.image_urls.length){
-                                                let images = [];
-                                                i.image_urls.forEach(function (im) {
-                                                    let image = {};
-                                                    image._id = im._id;
-                                                    image.url = im.url;
-                                                    images.push(image)
-                                                });
-                                                ii.images = images;
-                                            }
-                                            items.push(ii);
+        userModel.getUserInterests(data, function (err, r) {
+            if (err){
+                callback(true, r);
+            } else if (r.interests.length) {
+                let counter = 0;
+                let innerCounter = 0;
+                let requestCounter = 0;
+                r.interests.forEach(function(x){
+                    counter++;
+                    ItemModel.find({category: x.interestId, status: 'available'})
+                        .populate('user')
+                        .exec(function(err, res){
+                            if (err){
+                                result.error = true;
+                                result.message = 'error occurred';
+                                callback(true, result);
+                                //break;**/
+                            } else if (res.length){
+                                innerCounter = 0;
+                                res.forEach(function (i) {
+                                    innerCounter++;
+                                    if (i.status == 'available'){
+                                        let ii = {};
+                                        ii._id = i._id;
+                                        ii.status = i.status;
+                                        ii.created_at = timeAgo(i.created_at);
+                                        ii.name = i.name;
+                                        ii.owner = {};
+                                        ii.owner.name = i.user.name;
+                                        ii.owner._id = i.user._id;
+                                        ii.description = i.description;
+                                        ii.category = i.category;
+                                        if (i.image_urls.length){
+                                            let images = [];
+                                            i.image_urls.forEach(function (im) {
+                                                let image = {};
+                                                image._id = im._id;
+                                                image.url = im.url.substring(im.url.lastIndexOf('\\') + 1);
+                                                images.push(image)
+                                            });
+                                            ii.images = images;
                                         }
-                                    });
-                                } else {
-                                    result.error = true;
-                                    result.message = 'no items found';
-                                    callback(true, result);
-                                }
 
-                                if (items.length){
-                                    result.error = false;
-                                    result.items = items;
-                                    callback(false, result);
-                                } else {
-                                    result.error = true;
-                                    result.message = 'no available items found';
-                                    callback(true, result);
-                                }
-                            });
-                        } else {
-                            callback(true, r);
-                        }
-                    });
-                } else {
-                    result.error = true;
-                    result.message = 'this user blocked for rate';
-                    callback(true, result);
-                }
+                                        /*get requests sent to me by this item if exist*/
+                                        console.log('interest: ' + counter + r.interests.length);
+                                        console.log('inner: ' + innerCounter + res.length);
+                                        requestCounter = 0;
+                                        SwapRequestModel.find({owner: data.userId, providedItem: ii._id, status: "ongoing"})
+                                            .populate('needy - owner')
+                                            .populate('neededItem - providedItem')
+                                            .exec()
+                                            .then(function (doc) {
+                                                console.log(doc.length + " : " + res.length);
+                                                console.log('increase request ' + requestCounter + doc.length);
+                                                requestCounter++;
+
+                                                if (doc.length)
+                                                    ii.swapRequest = doc[0];
+                                                else
+                                                    ii.swapRequest = null;
+
+                                                /*the user in request does't have this item*/
+                                                if (ii.owner._id != data.userId)
+                                                    items.push(ii);
+
+                                                if (requestCounter === doc.length && innerCounter === res.length){
+
+                                                }
+
+                                                if (counter === r.interests.length && innerCounter === res.length
+                                                    && requestCounter === innerCounter){
+                                                    console.log('error');
+                                                    if (items.length){
+                                                        result.error = false;
+                                                        result.items = items;
+                                                        callback(false, result);
+                                                    } else {
+                                                        result.error = true;
+                                                        result.message = 'no available items found';
+                                                        callback(true, result);
+                                                    }
+                                                }
+                                            });
+                                    }
+                                });
+                            } else {
+                                result.error = true;
+                                result.message = 'no items found';
+                                callback(true, result);
+                                //break;*/
+                            }
+                        });
+                });
             } else {
-                result.error = true;
-                result.message = 'user not found';
-                callback(true, result);
+                callback(true, r);
             }
         });
     },
 
     getItemDetails: function (data, callback) {
         let result = {};
-        userModel.getUser(data.userId, function (err, res) {
-            if (res.length){
-                if (res.status == 'ongoing'){
-                    ItemModel.find({_id: data.itemId}, function (err, r) {
-                        if (err){
-                            result.error = true;
-                            result.messgae = 'error occurred';
-                            callback(true, result);
-                        } else if (r.length){
-                            if (r[0].status == 'available'){
-                                let item = {};
-                                item._id = r[0].id;
-                                item.status = r[0].status;
-                                item.created_at = r[0].created_at;
-                                item.name = r[0].name;
-                                item.category = r[0].category;
-                                item.description = r[0].description;
-                                item.owner = r[0].owner;
-                                item.images = r[0].image_urls;
+        ItemModel.find({_id: data.itemId}, function (err, r) {
+            if (err){
+                result.error = true;
+                result.messgae = 'error occurred';
+                callback(true, result);
+            } else if (r.length){
+                if (r[0].status == 'available'){
+                    let item = {};
+                    item._id = r[0].id;
+                    item.status = r[0].status;
+                    item.created_at = timeAgo(r[0].created_at);
+                    item.name = r[0].name;
+                    item.category = r[0].category;
+                    item.description = r[0].description;
+                    item.owner = r[0].owner;
+                    item.images = [];
+                    if (r[0].image_urls.length){
+                        r[0].image_urls.forEach(function (i) {
+                            item.images.push(i.substring(s.lastIndexOf('\\') + 1));
+                        });
+                    }
 
-                                result.error = false;
-                                result.item = item;
-                                callback(false, result);
-                            } else {
-                                result.error = true;
-                                result.messgae = 'this item not available';
-                                callback(true, result);
-                            }
-                        } else {
-                            result.error = true;
-                            result.messgae = 'item not found';
-                            callback(true, result);
-                        }
-                    });
+                    result.error = false;
+                    result.item = item;
+                    callback(false, result);
                 } else {
                     result.error = true;
-                    result.messgae = 'this user blocked for rate';
+                    result.messgae = 'this item not available';
                     callback(true, result);
                 }
             } else {
                 result.error = true;
-                result.messgae = 'user not found';
+                result.messgae = 'item not found';
                 callback(true, result);
             }
         });
@@ -562,62 +604,166 @@ module.exports = {
 
     getMyOngoingSwaps: function (data, callback) {
         let result = {};
-        userModel.getUser(data.userId, function (err, userResult) {
-            if (userResult.user.status == 'ongoing'){
-                SwapRequestModel.find({owner: data.userId, status: "ongoing"})
+        SwapRequestModel.find({owner: data.userId, status: "ongoing"})
+                    .sort('-created_at')
                     .populate('neededItem - providedItem')
                     .populate('needy - owner')
                     .exec(function (err, obj) {
                         if (err){
                             result.error = true;
-                            result.message = "internal error";
-                            callback(true, result);
+                            result.message = "internal error getting meOwnerRequests";
+                            //callback(true, result);
                         } else if (obj.length) {
                             result.error = false;
-                            result.requsts = obj;
-                            callback(false, result);
+                            result.meOwnerRequests = obj;
+                            //callback(true, result);
                         } else {
                             result.error = true;
                             result.message = "no requests have been found";
-                            callback(true, result);
+                            //callback(true, result);
                         }
+
+                         SwapRequestModel.find({needy: data.userId, status: "ongoing"})
+                                .sort('-created_at')
+                                .populate('neededItem - providedItem')
+                                .populate('needy - owner')
+                                .exec(function (err, obj2) {
+                                    if (err){
+                                        if (result.meOwnerRequests) {
+                                            result.error = false;
+                                            result.message = "internal error getting meNeedyRequests";
+                                            callback(false, result);
+                                        } else {
+                                            result.error = true;
+                                            result.message = "internal error";
+                                            callback(true, result);
+                                        }
+                                    } else if (obj2.length) {
+                                        result.error = false;
+                                        result.meNeedyRequests = obj2;
+                                        callback(false, result);
+                                    } else {
+                                        if (result.meOwnerRequests) {
+                                            result.error = false;
+                                            result.message = "no needy requests have been found";
+                                            callback(false, result);
+                                        } else {
+                                            result.error = true;
+                                            result.message = "no requests have been found";
+                                            callback(true, result);
+                                        }
+                                    }
+                                });
                     });
-            } else {
-                result.error = true;
-                result.message = "this user blocked for rate";
-                callback(true, result);
-            }
-        });
+    },
+
+    getMyUnratedSwaps: function (data, callback) {
+        let result = {};
+        SwapRequestModel.find({owner: data.userId, status: "in-swapping", ownerRate: 0})
+                    .sort('-created_at')
+                    .populate('neededItem - providedItem')
+                    .populate('needy - owner')
+                    .exec(function (err, obj) {
+                        if (err){
+                            result.error = true;
+                            result.message = "internal error getting meOwnerRequests";
+                            //callback(true, result);
+                        } else if (obj.length) {
+                            result.error = false;
+                            result.meOwnerRequests = obj;
+                            //callback(true, result);
+                        } else {
+                            result.error = true;
+                            result.message = "no requests have been found";
+                            //callback(true, result);
+                        }
+
+                         SwapRequestModel.find({needy: data.userId, status: "in-swapping", needyRate: 0})
+                                .sort('-created_at')
+                                .populate('neededItem - providedItem')
+                                .populate('needy - owner')
+                                .exec(function (err, obj2) {
+                                    if (err){
+                                        if (result.meOwnerRequests) {
+                                            result.error = false;
+                                            result.message = "internal error getting meNeedyRequests";
+                                            callback(false, result);
+                                        } else {
+                                            result.error = true;
+                                            result.message = "internal error";
+                                            callback(true, result);
+                                        }
+                                    } else if (obj2.length) {
+                                        result.error = false;
+                                        result.meNeedyRequests = obj2;
+                                        callback(false, result);
+                                    } else {
+                                        if (result.meOwnerRequests) {
+                                            result.error = false;
+                                            result.message = "no needy requests have been found";
+                                            callback(false, result);
+                                        } else {
+                                            result.error = true;
+                                            result.message = "no requests have been found";
+                                            callback(true, result);
+                                        }
+                                    }
+                                });
+                    });
     },
     
     getMyCompletedSwap: function (data, callback) {
         let result = {};
-        userModel.getUser(data.userId, function (err, userResult) {
-            if (userResult.user.status == 'ongoing'){
-                SwapRequestModel.find({owner: data.userId, status: "accepted"})
+        SwapRequestModel.find({owner: data.userId, status: "accepted"})
                     .populate('neededItem - providedItem')
                     .populate('needy - owner')
                     .exec(function (err, obj) {
                         if (err){
                             result.error = true;
                             result.message = "internal error";
-                            callback(true, result);
+                            //callback(true, result);
                         } else if (obj.length) {
                             result.error = false;
-                            result.requsts = obj;
-                            callback(false, result);
+                            result.meOwnerRequests = obj;
+                            //callback(false, result);
                         } else {
                             result.error = true;
                             result.message = "no requests have been found";
-                            callback(true, result);
+                            //callback(true, result);
                         }
+
+                        SwapRequestModel.find({needy: data.userId, status: "accepted"})
+                                .sort('-created_at')
+                                .populate('neededItem - providedItem')
+                                .populate('needy - owner')
+                                .exec(function (err, obj2) {
+                                    if (err){
+                                        if (result.meOwnerRequests) {
+                                            result.error = false;
+                                            result.message = "internal error getting meNeedyRequests";
+                                            callback(false, result);
+                                        } else {
+                                            result.error = true;
+                                            result.message = "internal error";
+                                            callback(true, result);
+                                        }
+                                    } else if (obj2.length) {
+                                        result.error = false;
+                                        result.meNeedyRequests = obj2;
+                                        callback(false, result);
+                                    } else {
+                                        if (result.meOwnerRequests) {
+                                            result.error = false;
+                                            result.message = "no needy requests have been found";
+                                            callback(false, result);
+                                        } else {
+                                            result.error = true;
+                                            result.message = "no requests have been found";
+                                            callback(true, result);
+                                        }
+                                    }
+                                });
                     });
-            } else {
-                result.error = true;
-                result.message = "this user blocked for rate";
-                callback(true, result);
-            }
-        });
     },
 
     getMyRejectedSwap: function (data, callback) {
@@ -653,114 +799,242 @@ module.exports = {
     respondToSwapRequest: function (data, callback) {
         let result = {};
         userModel.getUser(data.owner, function (err, userResult) {
-            if (userResult.user.status == 'ongoing'){
+            if (userResult.user.status == 'ongoing') {
                 SwapRequestModel.find({_id: data.requestId, owner: data.owner}, function (err, obj) {
                     if(obj.length){
                         /*accept request*/
-                        if (obj[0].status === 'ongoing'){
-                            if (data.status === "accepted"){
-                                RunningSwapsModel.find({userId: data.owner}, function (err, j) {
-                                    let runningSwapsForOwnerModel = null;
-                                    if (j.length){
-                                        j[0].running.push({swapId: data.requestId});
-                                        runningSwapsForOwnerModel = j[0];
-                                    } else {
-                                        let runningForOwner = {
-                                            userId: data.owner,
-                                            running: [{swapId: data.requestId}]
-                                        };
-                                        runningSwapsForOwnerModel = new RunningSwapsModel(runningForOwner);
-                                    }
-                                    runningSwapsForOwnerModel.save(function (err) {
-                                        if (err){
-                                            result.error = true;
-                                            result.message = "error occurred-1";
-                                            callback(true, result);
-                                        } else {
-                                            RunningSwapsModel.find({userId: obj[0].needy}, function (err, r) {
-                                                let runningSwapsForNeedyModel = null;
-                                                if (r.length){
-                                                    r[0].running.push({swapId: data.requestId});
-                                                    runningSwapsForNeedyModel = r[0];
-                                                } else {
-                                                    let runningForNeedy = {
-                                                        userId: obj[0].needy,
-                                                        running: [{swapId: data.requestId}]
-                                                    };
-                                                    runningSwapsForNeedyModel = new RunningSwapsModel(runningForNeedy);
-                                                }
-                                                runningSwapsForNeedyModel.save(function (err) {
-                                                    if (err){
-                                                        result.error = true;
-                                                        result.message = "error occurred-2";
-                                                        callback(true, result);
-                                                    } else {
-                                                        obj[0].status = data.status;
-                                                        obj[0].respond_at = Date.now();
-                                                        obj[0].after24h = Date.now().valueOf() + (24 * 60 * 60 * 1000);
-
-                                                        obj[0].save(function (err) {
-                                                            if (err){
-                                                                result.error = true;
-                                                                result.message = "error adding response";
-                                                                callback(true, result);
-                                                            } else {
-                                                                let intervalName = data.requestId;
-                                                                register1DayInterval(intervalName);
-
-
-                                                                /*
-                                                                 * -reject all other requests for that item (neededItem)
-                                                                 * */
-                                                                SwapRequestModel.find({neededItem: obj[0].neededItem}, function (err, res) {
-                                                                    if (res.length){
-                                                                        res.forEach(function (i) {
-                                                                            if (i._id != data.requestId){
-                                                                                i.status = 'rejected';
-                                                                                i.save(function (error) {
-
-                                                                                });
-                                                                            }
-                                                                        });
+                        if (obj[0].status === 'ongoing') {
+                            ItemModel.find({_id: obj[0].providedItem, status: 'available'}, function (ep, rp) {
+                                if (rp.length){
+                                    ItemModel.find({_id: obj[0].neededItem, status: 'available'}, function (en, rn) {
+                                        if (rn.length){
+                                            if (data.status === "accepted") {
+                                                ItemModel.find({_id: obj[0].neededItem}, function (eee, rrr) {
+                                                    rrr[0].status = 'processing';
+                                                    rrr[0].save(function (e1) {
+                                                        ItemModel.find({_id: obj[0].providedItem}, function (eee, rrrr) {
+                                                            rrrr[0].status = 'processing';
+                                                            rrrr[0].save(function (e2) {
+                                                                RunningSwapsModel.find({userId: data.owner}, function (err, j) {
+                                                                    let runningSwapsForOwnerModel = null;
+                                                                    if (j.length){
+                                                                        j[0].running.push({swapId: data.requestId});
+                                                                        runningSwapsForOwnerModel = j[0];
+                                                                    } else {
+                                                                        let runningForOwner = {
+                                                                            userId: data.owner,
+                                                                            running: [{swapId: data.requestId}]
+                                                                        };
+                                                                        runningSwapsForOwnerModel = new RunningSwapsModel(runningForOwner);
                                                                     }
-
-                                                                    /*
-                                                                     * -cancel all other requests for that item(providedItem)
-                                                                     * */
-                                                                    SwapRequestModel.find({providedItem: obj[0].providedItem}, function (err, r) {
-                                                                        if (r.length){
-                                                                            r.forEach(function (i) {
-                                                                                if (i._id != data.requestId){
-                                                                                    i.status = 'canceled';
-                                                                                    i.save(function (error) {
-
-                                                                                    });
+                                                                    runningSwapsForOwnerModel.save(function (err) {
+                                                                        if (err){
+                                                                            result.error = true;
+                                                                            result.message = "error occurred-1";
+                                                                            callback(true, result);
+                                                                        } else {
+                                                                            RunningSwapsModel.find({userId: obj[0].needy}, function (err, r) {
+                                                                                let runningSwapsForNeedyModel = null;
+                                                                                if (r.length){
+                                                                                    r[0].running.push({swapId: data.requestId});
+                                                                                    runningSwapsForNeedyModel = r[0];
+                                                                                } else {
+                                                                                    let runningForNeedy = {
+                                                                                        userId: obj[0].needy,
+                                                                                        running: [{swapId: data.requestId}]
+                                                                                    };
+                                                                                    runningSwapsForNeedyModel = new RunningSwapsModel(runningForNeedy);
                                                                                 }
+                                                                                runningSwapsForNeedyModel.save(function (err) {
+                                                                                    if (err){
+                                                                                        result.error = true;
+                                                                                        result.message = "error occurred-2";
+                                                                                        callback(true, result);
+                                                                                    } else {
+                                                                                        obj[0].status = 'in-swapping';
+                                                                                        obj[0].respond_at = Date.now();
+                                                                                        obj[0].after24h = Date.now().valueOf() + (24 * 60 * 60 * 1000);
+
+                                                                                        obj[0].save(function (err) {
+                                                                                            if (err){
+                                                                                                result.error = true;
+                                                                                                result.message = "error adding response";
+                                                                                                callback(true, result);
+                                                                                            } else {
+                                                                                                let intervalName = data.requestId;
+                                                                                                register1DayInterval(intervalName);
+
+                                                                                                /*
+                                                                                                 * -reject all other requests for that item (neededItem)
+                                                                                                 * */
+                                                                                                let rejectCounter = 0;
+                                                                                                SwapRequestModel.find({neededItem: obj[0].neededItem, status: 'ongoing'}, function (err, res) {
+                                                                                                    if (res.length){
+                                                                                                        res.forEach(function (i) {
+                                                                                                            rejectCounter++;
+                                                                                                            if (i._id != data.requestId){
+                                                                                                                i.status = 'rejected';
+                                                                                                                i.save(function (error) {
+                                                                                                                    if (error){
+                                                                                                                        console.error("error other swaps rejected")
+                                                                                                                    } else {
+                                                                                                                        console.log("other swaps rejected");
+                                                                                                                    }
+
+                                                                                                                    if (rejectCounter === res.length){
+                                                                                                                        /*
+                                                                                                                         * -change neededItem status to in-swapping
+                                                                                                                         * */
+                                                                                                                        ItemModel.find({_id: obj[0].neededItem}, function (err, f) {
+                                                                                                                            f[0].status = 'in-swapping';
+                                                                                                                            f[0].save(function (err) {
+                                                                                                                                if (err){
+                                                                                                                                    console.error("error change needed to in-swapping")
+                                                                                                                                } else {
+                                                                                                                                    console.log("change needed to in-swapping");
+                                                                                                                                }
+                                                                                                                            });
+                                                                                                                        });
+                                                                                                                    }
+                                                                                                                });
+                                                                                                            } else {
+                                                                                                                if (rejectCounter === res.length){
+                                                                                                                    /*
+                                                                                                                     * -change neededItem status to in-swapping
+                                                                                                                     * */
+                                                                                                                    ItemModel.find({_id: obj[0].neededItem}, function (err, f) {
+                                                                                                                        f[0].status = 'in-swapping';
+                                                                                                                        f[0].save(function (err) {
+                                                                                                                            if (err){
+                                                                                                                                console.error("error change needed to in-swapping")
+                                                                                                                            } else {
+                                                                                                                                console.log("change needed to in-swapping");
+                                                                                                                            }
+                                                                                                                        });
+                                                                                                                    });
+                                                                                                                }
+                                                                                                            }
+                                                                                                        });
+                                                                                                    } else {
+                                                                                                        /*
+                                                                                                         * -change neededItem status to in-swapping
+                                                                                                         * */
+                                                                                                        ItemModel.find({_id: obj[0].neededItem}, function (err, f) {
+                                                                                                            f[0].status = 'in-swapping';
+                                                                                                            f[0].save(function (err) {
+                                                                                                                if (err){
+                                                                                                                    console.error("error change needed to in-swapping")
+                                                                                                                } else {
+                                                                                                                    console.log("change needed to in-swapping");
+                                                                                                                }
+                                                                                                            });
+                                                                                                        });
+                                                                                                    }
+                                                                                                });
+
+                                                                                                /*
+                                                                                                 * -cancel all other requests for that item(providedItem)
+                                                                                                 * */
+                                                                                                let canceledCounter = 0;
+                                                                                                SwapRequestModel.find({providedItem: obj[0].providedItem, status: 'ongoing'}, function (err, r) {
+                                                                                                    if (r.length){
+                                                                                                        r.forEach(function (ii) {
+                                                                                                            canceledCounter++;
+                                                                                                            if (ii._id != data.requestId){
+                                                                                                                ii.status = 'canceled';
+                                                                                                                ii.save(function (error) {
+                                                                                                                    if (error){
+                                                                                                                        console.error("error cancel all other requests")
+                                                                                                                    } else {
+                                                                                                                        console.log("cancel all other requests");
+                                                                                                                    }
+                                                                                                                });
+
+                                                                                                                if (canceledCounter === r.length){
+                                                                                                                    /*
+                                                                                                                     * -change providedItem status to in-swapping
+                                                                                                                     * */
+                                                                                                                    ItemModel.find({_id: obj[0].providedItem}, function (e, c) {
+                                                                                                                        c[0].status = 'in-swapping';
+                                                                                                                        c[0].save(function (ee) {
+                                                                                                                            if (ee){
+                                                                                                                                console.error("error changing providedItem status to in-swapping")
+                                                                                                                            } else {
+                                                                                                                                console.log("change providedItem status to in-swapping");
+                                                                                                                            }
+                                                                                                                        });
+                                                                                                                    });
+                                                                                                                }
+                                                                                                            } else {
+                                                                                                                if (canceledCounter === r.length){
+                                                                                                                    /*
+                                                                                                                     * -change providedItem status to in-swapping
+                                                                                                                     * */
+                                                                                                                    ItemModel.find({_id: obj[0].providedItem}, function (e, c) {
+                                                                                                                        c[0].status = 'in-swapping';
+                                                                                                                        c[0].save(function (ee) {
+                                                                                                                            if (ee){
+                                                                                                                                console.error("error changing providedItem status to in-swapping")
+                                                                                                                            } else {
+                                                                                                                                console.log("change providedItem status to in-swapping");
+                                                                                                                            }
+                                                                                                                        });
+                                                                                                                    });
+                                                                                                                }
+                                                                                                            }
+                                                                                                        });
+                                                                                                    } else {
+                                                                                                        ItemModel.find({_id: obj[0].providedItem}, function (e, c) {
+                                                                                                            c[0].status = 'in-swapping';
+                                                                                                            c[0].save(function (ee) {
+                                                                                                                if (ee){
+                                                                                                                    console.error("error changing providedItem status to in-swapping")
+                                                                                                                } else {
+                                                                                                                    console.log("change providedItem status to in-swapping");
+                                                                                                                }
+                                                                                                            });
+                                                                                                        });
+                                                                                                    }
+                                                                                                });
+
+                                                                                                result.error = false;
+                                                                                                result.message = "response added successfully";
+                                                                                                callback(false, result);
+                                                                                            }
+                                                                                        });
+                                                                                    }
+                                                                                });
                                                                             });
                                                                         }
                                                                     });
-
-                                                                    result.error = false;
-                                                                    result.message = "response added successfully";
-                                                                    callback(false, result);
                                                                 });
-                                                            }
+                                                            });
                                                         });
-                                                    }
+                                                    });
                                                 });
-                                            });
+
+                                            } else {
+                                                /*reject request*/
+                                                console.log('saved');
+                                                result.error = false;
+                                                result.message = "response added successfully";
+                                                callback(false, result);
+                                            }
+                                        } else {
+                                            result.error = true;
+                                            result.message = "needed item not available";
+                                            callback(false, result);
                                         }
                                     });
-                                });
-                            } else {
-                                /*reject request*/
-                                result.error = false;
-                                result.message = "response added successfully";
-                                callback(false, result);
-                            }
+                                } else {
+                                    result.error = true;
+                                    result.message = "provided item not available";
+                                    callback(false, result);
+                                }
+                            });
                         } else {
                             result.error = true;
-                            result.message = "can not respond to this item";
+                            result.message = "can not respond to this request";
                             callback(false, result);
                         }
                     } else {
@@ -780,27 +1054,41 @@ module.exports = {
     rateSwap: function (data, callback) {
         let result = {};
         SwapRequestModel.find({_id: data.requestId}, function (err, obj) {
-            if (obj.length){
+            if (obj.length){    
                 if (data.userId == obj[0].needy){
-                    obj[0].needyRate = data.rate;
-                    ItemModel.find({_id: obj[0].providedItem}, function (err, res) {
-                        if (res.length){
-                            res[0].status = 'swapped';
-                            res[0].save(function (e) {
+                    if (obj[0].needyRate > 0) {
+                        result.error = true;
+                        result.message = "already rated";
+                        callback(true, result);
+                        return;
+                    } else {
+                        obj[0].needyRate = data.rate;
+                        ItemModel.find({_id: obj[0].providedItem}, function (err, res) {
+                            if (res.length){
+                                res[0].status = 'swapped';
+                                res[0].save(function (e) {
 
-                            });
-                        }
-                    });
+                                });
+                            }
+                        });
+                    }
                 } else if (data.userId == obj[0].owner){
-                    obj[0].ownerRate = data.rate;
-                    ItemModel.find({_id: obj[0].neededItem}, function (err, res) {
-                        if (res.length){
-                            res[0].status = 'swapped';
-                            res[0].save(function (e) {
+                    if (obj[0].ownerRate > 0) {
+                        result.error = true;
+                        result.message = "already rated";
+                        callback(true, result);
+                        return;
+                    } else {
+                        obj[0].ownerRate = data.rate;
+                        ItemModel.find({_id: obj[0].neededItem}, function (err, res) {
+                            if (res.length){
+                                res[0].status = 'swapped';
+                                res[0].save(function (e) {
 
-                            });
-                        }
-                    });
+                                });
+                            }
+                        });
+                    }
                 } else {
                     result.error = true;
                     result.message = "insufficient userId";
@@ -808,8 +1096,13 @@ module.exports = {
                     return;
                 }
 
+                if (obj[0].ownerRate > 0 && obj[0].needyRate > 0){
+                    obj[0].status = 'accepted';
+                }
+
                 obj[0].save(function (err) {
                     if (err){
+                        console.log(err);
                         result.error = true;
                         result.message = "error occurred";
                         callback(true, result);
@@ -828,9 +1121,12 @@ module.exports = {
                                         result.message = "insufficient requestId-1";
                                         callback(true, result);
                                     } else {
-                                        userModel.ongoing(data.userId, function (err, result) {
+                                        if (j[0].running.length === 0) {
+                                            userModel.ongoing(data.userId, function (err, result) {
 
-                                        });
+                                            });
+                                        } 
+                                    
                                         if (intervals[data.requestId] && obj[0].needyRate > 0 && obj[0].ownerRate > 0){
                                             intervals[data.requestId] = null;
                                             clearInterval(intervals[data.requestId.valueOf()]);
@@ -849,6 +1145,28 @@ module.exports = {
                 result.error = true;
                 result.message = "insufficient requestId-2";
                 callback(true, result);
+            }
+        });
+    },
+
+    getImageUrl: function (data, callback) {
+        let result = {};
+        ItemModel.find({_id: data.itemId}, function (err, res) {
+            if (err){
+                result.error = true;
+                result.message = "error getting item";
+                callback(true, result);
+            } else if (res.length) {
+                if (res[0].image_urls.length){
+                    res[0].image_urls.forEach(function (i) {
+                        if (i._id == data.imageId){
+                            result.error = false;
+                            result.url = i.url;
+                            callback(false, result);
+                            return;
+                        }
+                    });
+                }
             }
         });
     },

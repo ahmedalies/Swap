@@ -79,10 +79,11 @@ module.exports = {
             let result = {};
             if (obj.length){
                 result.error = false;
-                result.user = obj;
+                result.user = obj[0];
                 callback(false, result);
             } else {
                 result.error = true;
+                result.message = 'user not found';
                 callback(true, result);
             }
         });
@@ -110,7 +111,7 @@ module.exports = {
 
     subscribeInterests: function (data, callback) {
         let result = {};
-        UserModel.findById(_id, function (err, obj) {
+        UserModel.findById(data.userId, function (err, obj) {
             if (err){
                 result.error = true;
                 result.message = 'user not found';
@@ -119,16 +120,25 @@ module.exports = {
                 if (obj.status == 'ongoing'){
                     if (data.interests.length) {
                         data.interests.forEach(function (i) {
-                            i.userId = data.userId;
-                            let userInterestModel = new UserInterestModel(i);
-                            userInterestModel.save(function (err) {
-
+                            let newSubscribe = {};
+                            newSubscribe.userId = data.userId;
+                            newSubscribe.interestId = i;
+                            let userInterestModel = new UserInterestModel(newSubscribe);
+                            UserInterestModel.find({userId: newSubscribe.userId, interestId: newSubscribe.interestId},
+                                 function(err, res){
+                                     if(res.length){
+                                        result.error = true;
+                                        result.message = 'already subscribed';
+                                        callback(true, result);
+                                     } else {
+                                        userInterestModel.save(function (err) {
+                                            result.error = false;
+                                            result.message = 'added successfully';
+                                            callback(false, result);
+                                        });
+                                     }
                             });
                         });
-
-                        result.error = false;
-                        result.message = 'added successfully';
-                        callback(false, result);
                     } else {
                         result.error = true;
                         result.message = 'empty body';
@@ -145,21 +155,21 @@ module.exports = {
 
     getUserInterests: function (data, callback) {
         let result = {};
-        UserInterestModel.find({userId: data.userId}, function (er, res) {
-            if (err){
-                result.error = true;
-                result.message = 'error occurred';
-                callback(true, result);
-            } else if (res.length) {
-                result.error = false;
-                result.interests = res;
-                callback(false, result);
-            } else {
-                result.error = true;
-                result.message = 'this user does not have interests';
-                callback(true, result);
-            }
-        });
+        UserInterestModel.find({userId: data.userId}, function (err, res) {
+                if (err){
+                    result.error = true;
+                    result.message = 'error occurred';
+                    callback(true, result);
+                } else if (res.length) {
+                    result.error = false;
+                    result.interests = res;
+                    callback(false, result);
+                } else {
+                    result.error = true;
+                    result.message = 'this user does not have interests';
+                    callback(true, result);
+                }
+            });
     },
 
     blockUserForRate: function (_id, callback) {

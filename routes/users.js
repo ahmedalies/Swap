@@ -9,7 +9,7 @@ let item = require('../model/Item.js');
 
 let storage = multer.diskStorage({
     destination: function (req, file, cb) {
-        cb(null, './resources/items')
+        cb(null, '../resources/items')
     },
     filename: function (req, file, cb) {
         cb(null, sha1(file.originalname + Date.now()) + '.jpg');
@@ -26,13 +26,13 @@ router.get('/', function(req, res, next) {
 
 /* POST register user*/
 router.post('/register', function(req, res, next) {
-        user.register(req.body, function (err, result) {
-            if (err){
-                res.status(400).send(result);
-            } else {
-                res.status(200).send(result);
-            }
-        });
+    user.register(req.body, function (err, result) {
+        if (err){
+            res.status(400).send(result);
+        } else {
+            res.status(200).send(result);
+        }
+    });
 });
 
 /*POST login user*/
@@ -75,7 +75,7 @@ router.post('/items/add', upload.array('images', 12), function (req, res, next) 
 router.post('/items/ask-swap', function (req, res, next) {
     item.askForSwap(req.body, function (err, result) {
         if (err){
-            res.status(400).send(result);
+            res.status(200).send(result);
         } else {
             res.status(200).send(result);
         }
@@ -85,11 +85,12 @@ router.post('/items/ask-swap', function (req, res, next) {
 /*GET get ongoing requests for one user*/
 router.get('/items/get-ongoing-request/:userId', function (req, res, next) {
     item.getMyOngoingSwaps(req.params, function (err, result) {
-        if (err){
-            res.status(400).send(result);
-        } else {
-            res.status(200).send(result);
-        }
+        res.status(200).send(result);
+        // if (err){
+        //     res.status(400).send(result);
+        // } else {
+        //     res.status(200).send(result);
+        // }
     });
 });
 
@@ -119,22 +120,25 @@ router.get('/items/get-rejected-request/:userId', function (req, res, next) {
 /*POST respond to request*/
 router.post('/items/respond-to-request', function (req, res, next) {
     item.respondToSwapRequest(req.body, function (err, result) {
-        if (err){
-            res.status(400).send(result);
-        } else {
-            res.status(200).send(result);
-        }
+        console.log(result);
+        res.status(200).send(result);
+        // if (err){
+        //     res.status(400).send(result);
+        // } else {
+        //     res.status(200).send(result);
+        // }
     });
 });
 
 /*POST respond to request*/
 router.post('/items/rate-swap', function (req, res, next) {
     item.rateSwap(req.body, function (err, result) {
-        if (err){
-            res.status(400).send(result);
-        } else {
-            res.status(200).send(result);
-        }
+        // if (err){
+        //     res.status(400).send(result);
+        // } else {
+        //     res.status(200).send(result);
+        // }
+        res.status(200).send(result);
     });
 });
 
@@ -150,7 +154,7 @@ router.post('/interest-subscribe', function (req, res, next) {
 });
 
 /*GET all user interests*/
-router.get('/my-interests', function (req, res, next) {
+router.get('/interests', function (req, res, next) {
     user.getAllInterests(function (err, result) {
         if (err){
             res.status(400).send(result);
@@ -161,18 +165,19 @@ router.get('/my-interests', function (req, res, next) {
 });
 
 /*GET all user items*/
-router.get('/home/:userId', function (req, res, next) {
+router.get('/my-items/:userId', function (req, res, next) {
     item.getUserItems(req.params, function (err, result) {
-        if (err){
-            res.status(400).send(result);
-        } else {
-            res.status(200).send(result);
-        }
+    	res.status(200).send(result);
+        // if (err){
+        //     res.status(400).send(result);
+        // } else {
+        //     res.status(200).send(result);
+        // }
     });
 });
 
 /*GET items by user categories*/
-router.get('/my-items/:userId', function (req, res, next) {
+router.get('/home/:userId', function (req, res, next) {
     item.getItemsByCategory(req.params, function (err, result) {
         if (err){
             res.status(400).send(result);
@@ -182,14 +187,39 @@ router.get('/my-items/:userId', function (req, res, next) {
     });
 });
 
-/*POST items by user categories*/
-router.post('/item', function (req, res, next) {
-    item.getItemDetails(req.body, function (err, result) {
-        if (err){
-            res.status(400).send(result);
-        } else {
-            res.status(200).send(result);
-        }
+/*GET get item details*/
+router.get('/items/unrated-swaps/:userId', function (req, res, next) {
+    item.getMyUnratedSwaps(req.params, function (err, result) {
+        // if (err){
+        //     res.status(400).send(result);
+        // } else {
+        //     res.status(200).send(result);
+        // }
+         res.status(200).send(result);
+    });
+});
+
+/*GET get item details*/
+router.get('/items/completed-swaps/:userId', function (req, res, next) {
+    item.getMyCompletedSwap(req.params, function (err, result) {
+        // if (err){
+        //     res.status(400).send(result);
+        // } else {
+        //     res.status(200).send(result);
+        // }
+         res.status(200).send(result);
+    });
+});
+
+/*POST item details*/
+router.post('/item/report', function (req, res, next) {
+    item.reportItem(req.body, function (err, result) {
+        res.status(200).send(result);
+        // if (err){
+        //     res.status(400).send(result);
+        // } else {
+        //     res.status(200).send(result);
+        // }
     });
 });
 

@@ -105,7 +105,7 @@ module.exports = {
                     let item = {};
                     item._id = i._id;
                     item.name = i.name;
-                    item.image = 'http://192.168.56.1:3000' +
+                    item.image = 'http://192.168.174.1:3000' +
                         i.image_url.slice(1, i.image_url.length);
                     interests.push(item);
                 });
